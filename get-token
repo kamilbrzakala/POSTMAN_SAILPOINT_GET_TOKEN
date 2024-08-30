@@ -1,0 +1,82 @@
+
+function getEVar(variableName) {
+    let value = pm.environment.get(variableName);
+    return value;
+}
+function getCVar(variableName) {
+    let value = pm.collectionVariables.get(variableName);
+    return value;
+}
+function isEmpty(str) {
+    return (!str || 0 === str.length);
+}
+
+var org_name = getEVar('org_name');
+var at = getEVar('access_token');
+var at_expiration = getEVar('access_token_expiration');
+
+
+//set our URIs
+if(!isEmpty(org_name)){
+    pm.collectionVariables.set('api_url', "https://" + org_name + ".api.identitynow.com/");
+    pm.collectionVariables.set('ui_url', "https://" + org_name + ".identitynow.com/");
+} else {
+  throw new Error("No org_name found.  Is your environment configuration valid?");   
+}
+
+if( !isEmpty(at) && !isEmpty(at_expiration)){
+
+        var at_expirationdate = new Date(at_expiration);
+        var now = new Date();
+        var diff = Math.abs(at_expirationdate - now);
+        //refresh if we're below 15 minutes from expiration
+       if (now.getTime()<at_expirationdate.getTime() && diff > 900000){
+                console.log('Found valid access token with expiration of: ' + at_expirationdate + '. ' + (diff / 1000) + ' seconds until refresh.')
+                return;
+            }
+
+}
+
+//generate an access token
+console.log("No access token found. Attempting to generate new one using configured client ID and secret.");
+
+
+var api_url = getCVar('api_url');
+var pat_id = getEVar('pat_id');
+var pat_secret = getEVar('pat_secret');
+var at_expiration_in = 0;
+
+if( isEmpty(api_url) || isEmpty(pat_id) || isEmpty(pat_secret)) {
+      throw new Error("Could not find PAT ID and/or secret.  Is your environment configuration valid?");    
+}
+
+
+let getTokenRequest = {
+    method: 'POST',
+    url: api_url+'oauth/token?grant_type=client_credentials&client_id=' + pat_id + '&client_secret='+pat_secret
+};
+
+pm.sendRequest(getTokenRequest, (err, response) => {
+    let jsonResponse = response.json(),
+        at = jsonResponse.access_token,
+        at_expiration_in = jsonResponse.expires_in
+        
+    if(err){
+        console.log(err);
+        throw new Error(err); 
+    }
+    if(at){
+        //console.log(jsonResponse);
+        pm.environment.set('access_token', at);
+            if(at_expiration_in){
+                var expiresAt = new Date();
+                var expiresAt = new Date(expiresAt.getTime() + 1000 * at_expiration_in);
+                expiresAt = expiresAt.toUTCString();					
+                console.log("Setting new access token with expire date: " + expiresAt);
+                pm.environment.set('access_token_expiration', expiresAt);
+            }
+        
+    }
+
+
+});
